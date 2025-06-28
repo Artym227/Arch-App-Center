@@ -33,6 +33,25 @@ A modern graphical package manager for Arch Linux and derivatives, built with El
 
 ## Installation
 
+### Using makepkg (Recommended)
+
+The easiest way to install Arch App Center is using the provided PKGBUILD:
+
+```bash
+# Clone the repository
+git clone https://github.com/artym/arch-app-center.git
+cd arch-app-center
+
+# Build and install the package
+makepkg -si
+```
+
+This will automatically:
+- Install all required dependencies
+- Build the application
+- Install it system-wide
+- Create desktop integration
+
 ### From Source
 
 1. **Clone the repository:**

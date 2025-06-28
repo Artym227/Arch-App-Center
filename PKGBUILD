@@ -15,7 +15,7 @@ source=("git+file://${PWD}#commit=$(git rev-parse HEAD 2>/dev/null || echo HEAD)
 sha256sums=('SKIP')
 
 build() {
-  cd "$srcdir/$pkgname-$pkgver"
+  cd "$srcdir/Arch-App-Center"
   # Install npm dependencies
   npm install
   # Build TypeScript to JavaScript
@@ -25,7 +25,7 @@ build() {
 }
 
 package() {
-  cd "$srcdir/$pkgname-$pkgver"
+  cd "$srcdir/Arch-App-Center"
   
   # Create necessary directories
   install -dm755 "$pkgdir/usr/lib/$pkgname"

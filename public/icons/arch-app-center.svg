@@ -1,7 +1,4 @@
 <svg viewBox="0 0 256 256" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <!-- Черный фон -->
-  <rect width="256" height="256" fill="#181c20"/>
-  
   <!-- Синий треугольник (внешний) -->
   <path d="M128 16L240 240H16L128 16Z" fill="#4fc3f7"/>
   

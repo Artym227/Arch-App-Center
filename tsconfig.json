@@ -1,0 +1,38 @@
+{
+  "compilerOptions": {
+    // Target ES2020 for modern Node.js and Electron compatibility
+    "target": "ES2020",
+    // Use ES modules for better compatibility with Electron
+    "module": "ES2020",
+    // Enable strict type checking for better code quality
+    "strict": true,
+    // Allow JavaScript files to be compiled
+    "allowJs": true,
+    // Skip type checking of declaration files for faster compilation
+    "skipLibCheck": true,
+    // Force consistent casing in file names
+    "forceConsistentCasingInFileNames": true,
+    // Enable ES module interop for better compatibility
+    "esModuleInterop": true,
+    // Allow default imports from modules with no default export
+    "allowSyntheticDefaultImports": true,
+    // Resolve modules using Node.js resolution algorithm
+    "moduleResolution": "node",
+    // Include source maps for debugging
+    "sourceMap": true,
+    // Output directory for compiled JavaScript files
+    "outDir": "./build",
+    // Root directory for source files
+    "rootDir": "./src"
+  },
+  // Include all TypeScript files in the project
+  "include": [
+    "src/**/*"
+  ],
+  // Exclude node_modules and build artifacts
+  "exclude": [
+    "node_modules",
+    "dist",
+    "build"
+  ]
+} 

@@ -1,0 +1,54 @@
+{
+  "name": "arch-app-center",
+  "version": "1.0.0",
+  "description": "A modern graphical package manager for Arch Linux with pacman and AUR support. Built with Electron for a native desktop experience.",
+  "main": "src/main.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "npm run build && electron .",
+    "dev": "tsc --watch & electron .",
+    "postinstall": "electron-builder install-app-deps",
+    "dist": "electron-builder",
+    "icons": "bash scripts/generate-icons.sh"
+  },
+  "author": "artym",
+  "license": "MIT",
+  "keywords": [
+    "arch-linux",
+    "pacman",
+    "aur",
+    "package-manager",
+    "electron",
+    "desktop-app",
+    "linux",
+    "arch"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/artym/arch-app-center.git"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "electron": "^28.0.0",
+    "electron-builder": "^24.0.0",
+    "typescript": "^5.0.0"
+  },
+  "dependencies": {},
+  "build": {
+    "appId": "com.artym.archappcenter",
+    "productName": "Arch App Center",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "src/**/*",
+      "public/**/*",
+      "package.json"
+    ],
+    "linux": {
+      "target": "AppImage",
+      "category": "System",
+      "icon": "public/icons/arch-app-center-512.png"
+    }
+  }
+} 

@@ -38,7 +38,7 @@ A modern graphical package manager for Arch Linux and derivatives, built with El
 1. **Clone the repository:**
    ```bash
    git clone https://github.com/artym/arch-app-center.git
-   cd arch-app-center
+   cd Arch-App-Center
    ```
 2. **Install dependencies:**
    ```bash

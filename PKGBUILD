@@ -10,7 +10,8 @@ url="https://github.com/artym/arch-app-center"
 license=('MIT')
 depends=('electron' 'pacman' 'yay')
 makedepends=('npm' 'nodejs' 'typescript')
-source=("$pkgname-$pkgver.tar.gz")
+# Use git source for local development
+source=("git+file://${PWD}#commit=$(git rev-parse HEAD 2>/dev/null || echo HEAD)")
 sha256sums=('SKIP')
 
 build() {

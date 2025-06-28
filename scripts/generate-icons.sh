@@ -26,23 +26,24 @@ echo "Generating PNG icons from $SVG_FILE..."
 mkdir -p public/icons
 
 # Generate icons in different sizes for various use cases
+# Using -background none to preserve transparency
 # 512x512 - High resolution for modern displays
-convert "$SVG_FILE" -resize 512x512 "public/icons/arch-app-center-512.png"
+convert "$SVG_FILE" -background none -resize 512x512 "public/icons/arch-app-center-512.png"
 
 # 256x256 - Standard application icon size
-convert "$SVG_FILE" -resize 256x256 "public/icons/arch-app-center-256.png"
+convert "$SVG_FILE" -background none -resize 256x256 "public/icons/arch-app-center-256.png"
 
 # 128x128 - Medium size for menus and toolbars
-convert "$SVG_FILE" -resize 128x128 "public/icons/arch-app-center-128.png"
+convert "$SVG_FILE" -background none -resize 128x128 "public/icons/arch-app-center-128.png"
 
 # 64x64 - Small size for file managers
-convert "$SVG_FILE" -resize 64x64 "public/icons/arch-app-center-64.png"
+convert "$SVG_FILE" -background none -resize 64x64 "public/icons/arch-app-center-64.png"
 
 # 32x32 - Very small size for system trays
-convert "$SVG_FILE" -resize 32x32 "public/icons/arch-app-center-32.png"
+convert "$SVG_FILE" -background none -resize 32x32 "public/icons/arch-app-center-32.png"
 
 # 16x16 - Minimal size for taskbars
-convert "$SVG_FILE" -resize 16x16 "public/icons/arch-app-center-16.png"
+convert "$SVG_FILE" -background none -resize 16x16 "public/icons/arch-app-center-16.png"
 
 # Create a default icon (256x256) for general use
 cp "public/icons/arch-app-center-256.png" "public/icons/arch-app-center.png"

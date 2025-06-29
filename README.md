@@ -44,9 +44,6 @@ yay -S arch-app-center
 # Or using paru
 paru -S arch-app-center
 
-# Or using any other AUR helper
-your-aur-helper arch-app-center
-```
 
 Alternatively, you can install it manually from AUR:
 ```bash

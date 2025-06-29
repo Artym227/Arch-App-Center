@@ -43,6 +43,7 @@ yay -S arch-app-center
 
 # Or using paru
 paru -S arch-app-center
+```
 
 
 Alternatively, you can install it manually from AUR:

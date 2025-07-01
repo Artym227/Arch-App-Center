@@ -38,21 +38,14 @@ A modern graphical package manager for Arch Linux and derivatives, built with El
 The easiest way to install Arch App Center is through the AUR:
 
 ```bash
-# Using yay (recommended)
 yay -S arch-app-center
-
-# Or using paru
-paru -S arch-app-center
 ```
 
 
 Alternatively, you can install it manually from AUR:
 ```bash
-# Clone the AUR package
 git clone https://aur.archlinux.org/arch-app-center.git
 cd arch-app-center
-
-# Build and install
 makepkg -si
 ```
 
@@ -61,11 +54,8 @@ makepkg -si
 The easiest way to install Arch App Center is using the provided PKGBUILD:
 
 ```bash
-# Clone the repository
 git clone https://github.com/artym/arch-app-center.git
 cd arch-app-center
-
-# Build and install the package
 makepkg -si
 ```
 

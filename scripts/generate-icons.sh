@@ -1,51 +1,39 @@
 #!/bin/bash
 
-# Arch App Center Icon Generator Script
-# This script generates PNG icons in various sizes from the SVG source
-# Requires ImageMagick to be installed: sudo pacman -S imagemagick
+# Arch App Center Icon Generator Script (rsvg-convert version)
+# Этот скрипт генерирует PNG-иконки разных размеров из SVG-источника
+# Требуется rsvg-convert: sudo pacman -S librsvg
 
-# Set the source SVG file path
+# Путь к исходному SVG-файлу
 SVG_FILE="public/icons/arch-app-center.svg"
 
-# Check if ImageMagick is installed
-if ! command -v convert &> /dev/null; then
-    echo "Error: ImageMagick is not installed."
-    echo "Please install it with: sudo pacman -S imagemagick"
+# Проверка наличия rsvg-convert
+if ! command -v rsvg-convert &> /dev/null; then
+    echo "Error: rsvg-convert is not installed."
+    echo "Please install it with: sudo pacman -S librsvg"
     exit 1
 fi
 
-# Check if source SVG file exists
+# Проверка наличия исходного SVG-файла
 if [ ! -f "$SVG_FILE" ]; then
     echo "Error: Source SVG file not found at $SVG_FILE"
     exit 1
 fi
 
-echo "Generating PNG icons from $SVG_FILE..."
+echo "Generating PNG icons from $SVG_FILE using rsvg-convert..."
 
-# Create icons directory if it doesn't exist
+# Создать папку icons, если не существует
 mkdir -p public/icons
 
-# Generate icons in different sizes for various use cases
-# Using -background none to preserve transparency
-# 512x512 - High resolution for modern displays
-convert "$SVG_FILE" -background none -resize 512x512 "public/icons/arch-app-center-512.png"
+# Массив размеров
+sizes=(512 256 128 64 32 16)
 
-# 256x256 - Standard application icon size
-convert "$SVG_FILE" -background none -resize 256x256 "public/icons/arch-app-center-256.png"
+# Генерация PNG-иконок разных размеров
+for size in "${sizes[@]}"; do
+    rsvg-convert -w $size -h $size -a "$SVG_FILE" -o "public/icons/arch-app-center-${size}.png"
+done
 
-# 128x128 - Medium size for menus and toolbars
-convert "$SVG_FILE" -background none -resize 128x128 "public/icons/arch-app-center-128.png"
-
-# 64x64 - Small size for file managers
-convert "$SVG_FILE" -background none -resize 64x64 "public/icons/arch-app-center-64.png"
-
-# 32x32 - Very small size for system trays
-convert "$SVG_FILE" -background none -resize 32x32 "public/icons/arch-app-center-32.png"
-
-# 16x16 - Minimal size for taskbars
-convert "$SVG_FILE" -background none -resize 16x16 "public/icons/arch-app-center-16.png"
-
-# Create a default icon (256x256) for general use
+# Создать дефолтную иконку (256x256)
 cp "public/icons/arch-app-center-256.png" "public/icons/arch-app-center.png"
 
 echo "Icon generation completed successfully!"

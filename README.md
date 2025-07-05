@@ -45,7 +45,7 @@ yay -S arch-app-center
 Alternatively, you can install it manually from AUR:
 ```bash
 git clone https://aur.archlinux.org/arch-app-center.git
-cd arch-app-center
+cd Arch-App-Center
 makepkg -si
 ```
 
@@ -55,7 +55,7 @@ The easiest way to install Arch App Center is using the provided PKGBUILD:
 
 ```bash
 git clone https://github.com/artym/arch-app-center.git
-cd arch-app-center
+cd Arch-App-Center
 makepkg -si
 ```
 

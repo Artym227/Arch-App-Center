@@ -8,5 +8,7 @@ contextBridge.exposeInMainWorld('api', {
   cancelPackageAction: () => ipcRenderer.invoke('cancel-package-action'),
   onPackageProgress: (callback: (data: any) => void) => {
     ipcRenderer.on('package-progress', (event, data) => callback(data));
-  }
+  },
+  installArchAudit: () => ipcRenderer.invoke('install-arch-audit'),
+  checkVulnerabilities: (packageName: string) => ipcRenderer.invoke('check-vulnerabilities', packageName),
 }); 

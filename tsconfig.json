@@ -2,8 +2,8 @@
   "compilerOptions": {
     // Target ES2020 for modern Node.js and Electron compatibility
     "target": "ES2020",
-    // Use ES modules for better compatibility with Electron
-    "module": "ES2020",
+    // Use CommonJS for Electron compatibility
+    "module": "CommonJS",
     // Enable strict type checking for better code quality
     "strict": true,
     // Allow JavaScript files to be compiled

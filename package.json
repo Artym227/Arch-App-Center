@@ -2,11 +2,11 @@
   "name": "arch-app-center",
   "version": "1.0.0",
   "description": "A modern graphical package manager for Arch Linux with pacman and AUR support. Built with Electron for a native desktop experience.",
-  "main": "src/main.js",
+  "main": "build/main.js",
   "scripts": {
     "build": "tsc",
-    "start": "npm run build && electron .",
-    "dev": "tsc --watch & electron .",
+    "start": "npm run build && NODE_ENV=production electron .",
+    "dev": "tsc --watch & NODE_ENV=development electron .",
     "postinstall": "electron-builder install-app-deps",
     "dist": "electron-builder",
     "icons": "bash scripts/generate-icons.sh"

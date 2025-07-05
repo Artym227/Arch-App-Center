@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, Menu } from 'electron';
+import { app, BrowserWindow, ipcMain, globalShortcut, Menu } from 'electron';
 import * as path from 'path';
 import { exec, spawn, ChildProcess } from 'child_process';
 
@@ -8,15 +8,79 @@ function createWindow() {
     height: 800,
     icon: path.join(__dirname, '../public/icons/arch-app-center.png'),
     webPreferences: {
-      preload: path.join(__dirname, 'preload.js'),
+      preload: path.join(__dirname, '../build/preload.js'),
       nodeIntegration: false,
       contextIsolation: true
     }
   });
+  
   win.loadFile(path.join(__dirname, '../public/index.html'));
+
+  // Открываем DevTools только в режиме разработки
+  if (process.env.NODE_ENV === 'development') {
+    win.webContents.on('dom-ready', () => {
+      console.log('DOM ready, opening DevTools in development mode...');
+      try {
+        win.webContents.openDevTools();
+        console.log('DevTools opened successfully');
+      } catch (error) {
+        console.error('Failed to open DevTools:', error);
+      }
+    });
+
+    // Глобальный shortcut для F12 только в режиме разработки
+    globalShortcut.register('F12', () => {
+      console.log('F12 pressed, opening DevTools...');
+      const win = BrowserWindow.getAllWindows()[0];
+      if (win) {
+        try {
+          win.webContents.openDevTools();
+          console.log('DevTools opened via F12');
+        } catch (error) {
+          console.error('Failed to open DevTools via F12:', error);
+        }
+      }
+    });
+
+    // Меню разработчика только в режиме разработки
+    const template = [
+      {
+        label: 'Developer',
+        submenu: [
+          {
+            label: 'Toggle DevTools',
+            accelerator: 'F12',
+            click: () => {
+              const win = BrowserWindow.getAllWindows()[0];
+              if (win) {
+                try {
+                  win.webContents.openDevTools();
+                  console.log('DevTools opened via menu');
+                } catch (error) {
+                  console.error('Failed to open DevTools via menu:', error);
+                }
+              }
+            }
+          },
+          {
+            label: 'Reload',
+            accelerator: 'CmdOrCtrl+R',
+            click: () => {
+              const win = BrowserWindow.getAllWindows()[0];
+              if (win) win.reload();
+            }
+          }
+        ]
+      }
+    ];
+    const menu = Menu.buildFromTemplate(template);
+    Menu.setApplicationMenu(menu);
+  }
 }
 
-app.whenReady().then(createWindow);
+app.whenReady().then(() => {
+  createWindow();
+});
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
@@ -318,6 +382,141 @@ ipcMain.handle('remove-package', async (event, pkgName: string, repo: string) =>
       currentChildProcess = null;
       win.webContents.send('package-progress', { progress: 100, action: 'remove', pkgName, error: error.message });
       resolve({ success: false, error: error.message });
+    });
+  });
+});
+
+// Установить пакет arch-audit
+ipcMain.handle('install-arch-audit', async () => {
+  const win = BrowserWindow.getAllWindows()[0];
+  
+  return new Promise<{ success: boolean; error?: string }>(async (resolve) => {
+    const adminCmd = await getAdminCommand();
+    const command = adminCmd.command;
+    const args = [...adminCmd.args, 'pacman', '-S', '--noconfirm', 'arch-audit'];
+    
+    const child = spawn(command, args, { 
+      stdio: ['pipe', 'pipe', 'pipe'],
+      env: { ...process.env, DISPLAY: process.env.DISPLAY || ':0' }
+    });
+    
+    // Сохраняем ссылку на процесс для возможности отмены
+    currentChildProcess = child;
+    
+    let progress = 0;
+    let errorOutput = '';
+    let isWaitingForPassword = false;
+    let passwordEntered = false;
+    let progressInterval: NodeJS.Timeout | null = null;
+    
+    const startProgressInterval = () => {
+      progressInterval = setInterval(() => {
+        if (!isWaitingForPassword) {
+          progress += Math.random() * 10;
+          if (progress > 90) progress = 90;
+          win.webContents.send('package-progress', { progress: Math.round(progress), action: 'install', pkgName: 'arch-audit' });
+        }
+      }, 500);
+    };
+    
+    const stopProgressInterval = () => {
+      if (progressInterval) {
+        clearInterval(progressInterval);
+        progressInterval = null;
+      }
+    };
+    
+    // Запускаем прогресс
+    startProgressInterval();
+    
+    child.stdout.on('data', (data) => {
+      const output = data.toString();
+      if (output.includes('downloading') || output.includes('installing')) {
+        if (isWaitingForPassword) {
+          isWaitingForPassword = false;
+          passwordEntered = true;
+          startProgressInterval();
+          win.webContents.send('package-progress', { 
+            progress: Math.round(progress), 
+            action: 'install', 
+            pkgName: 'arch-audit',
+            passwordEntered: true 
+          });
+        }
+        progress = Math.min(progress + 5, 90);
+        win.webContents.send('package-progress', { progress: Math.round(progress), action: 'install', pkgName: 'arch-audit' });
+      }
+    });
+    
+    child.stderr.on('data', (data) => {
+      const error = data.toString();
+      errorOutput += error;
+      
+      if (error.includes('password') || error.includes('Password') || error.includes('sudo') || error.includes('pkexec')) {
+        isWaitingForPassword = true;
+        stopProgressInterval();
+        win.webContents.send('package-progress', { 
+          progress: Math.round(progress), 
+          action: 'install', 
+          pkgName: 'arch-audit',
+          waitingForPassword: true 
+        });
+        return;
+      }
+      
+      if (error.includes('error') || error.includes('failed') || error.includes('not found')) {
+        stopProgressInterval();
+        currentChildProcess = null;
+        win.webContents.send('package-progress', { progress: 100, action: 'install', pkgName: 'arch-audit', error: error });
+        resolve({ success: false, error: error });
+      }
+    });
+    
+    child.on('close', (code) => {
+      stopProgressInterval();
+      currentChildProcess = null;
+      if (code === 0) {
+        win.webContents.send('package-progress', { progress: 100, action: 'install', pkgName: 'arch-audit', success: true });
+        resolve({ success: true });
+      } else {
+        const errorMessage = errorOutput || `Процесс завершился с кодом ${code}. Возможные причины:\n- Недостаточно прав (нужен пароль администратора)\n- Пакет не найден в репозитории\n- Проблемы с сетью`;
+        win.webContents.send('package-progress', { progress: 100, action: 'install', pkgName: 'arch-audit', error: errorMessage });
+        resolve({ success: false, error: errorMessage });
+      }
+    });
+    
+    child.on('error', (error) => {
+      stopProgressInterval();
+      currentChildProcess = null;
+      win.webContents.send('package-progress', { progress: 100, action: 'install', pkgName: 'arch-audit', error: error.message });
+      resolve({ success: false, error: error.message });
+    });
+  });
+});
+
+// Проверить уязвимости через arch-audit
+ipcMain.handle('check-vulnerabilities', async (event, packageName: string) => {
+  return new Promise((resolve, reject) => {
+    exec('arch-audit --json', (err, stdout, stderr) => {
+      if (err) {
+        resolve({ hasVulnerabilities: false, error: err.message });
+        return;
+      }
+      
+      try {
+        const result = JSON.parse(stdout);
+        const vulnerablePackages = result.packages || [];
+        const hasVulnerabilities = vulnerablePackages.some((pkg: any) => 
+          pkg.name === packageName || pkg.pkgname === packageName
+        );
+        
+        resolve({ 
+          hasVulnerabilities, 
+          vulnerablePackages: hasVulnerabilities ? vulnerablePackages : []
+        });
+      } catch (parseError) {
+        resolve({ hasVulnerabilities: false, error: 'Failed to parse arch-audit output' });
+      }
     });
   });
 }); 

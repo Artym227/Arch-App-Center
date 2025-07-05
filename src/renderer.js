@@ -446,94 +446,56 @@ function cancelPackageAction() {
 
 // Функция для установки/удаления пакета
 async function handlePackageAction(pkgName, repo, isInstalled) {
-  if (!window.api) {
-    showError('Ошибка', 'API недоступен');
-    return;
-  }
-  
-  try {
-    const action = isInstalled ? 'remove' : 'install';
-    showProgress(action, pkgName);
-    
-    // Сохраняем ссылку на текущий процесс
-    currentProcess = { pkgName, repo, action };
-    
-    // Настраиваем слушатель прогресса
-    window.api.onPackageProgress((data) => {
-      if (data.pkgName === pkgName && data.action === action) {
-        updateProgress(data.progress);
+  if (isInstalled) {
+    // Удаление пакета
+    showProgress('remove', pkgName);
+    try {
+      const result = await window.api.removePackage(pkgName, repo);
+      if (result.success) {
+        showSuccess('removed', pkgName, repo);
+        await checkInstalledPackages();
+      } else {
+        showError('Remove Error', result.error || 'Failed to remove package');
+      }
+    } catch (e) {
+      showError('Remove Error', e.message || 'Failed to remove package');
+    }
+    hideProgress();
+  } else {
+    // Установка пакета - проверяем уязвимости
+    try {
+      const vulnerabilityCheck = await checkVulnerabilities(pkgName);
+      
+      if (vulnerabilityCheck.hasVulnerabilities) {
+        // Найдены уязвимости - спрашиваем пользователя
+        const vulnerablePkg = vulnerabilityCheck.vulnerablePackages.find(pkg => 
+          pkg.name === pkgName || pkg.pkgname === pkgName
+        );
         
-        // Обрабатываем ожидание ввода пароля
-        if (data.waitingForPassword) {
-          updateProgressTitle('Ожидание ввода пароля...');
-        } else if (data.passwordEntered) {
-          // Пароль введен, возобновляем нормальный заголовок
-          const normalTitle = action === 'install' ? `Установка ${pkgName}...` : `Удаление ${pkgName}...`;
-          updateProgressTitle(normalTitle);
-        } else if (!data.waitingForPassword && !data.passwordEntered && data.progress > 0) {
-          // Восстанавливаем нормальный заголовок, если не ждем пароль и прогресс идет
-          const normalTitle = action === 'install' ? `Установка ${pkgName}...` : `Удаление ${pkgName}...`;
-          updateProgressTitle(normalTitle);
-        }
+        const warningMessage = `${t('archAuditFoundThreat')}\n\n` +
+          `Пакет: ${pkgName}\n` +
+          `Уязвимость: ${vulnerablePkg?.advisory || 'Unknown'}\n` +
+          `CVE: ${vulnerablePkg?.cve || 'N/A'}`;
         
-        if (data.error) {
-          hideProgress();
-          currentProcess = null;
-          showError(
-            action === 'install' ? 'Ошибка установки' : 'Ошибка удаления',
-            data.error
-          );
-        } else if (data.success) {
-          // Мгновенно обновляем список пакетов и страницу
-          setTimeout(async () => {
-            hideProgress();
-            currentProcess = null;
-            
-            // Показываем окно уведомления об успехе
-            showSuccess(action, pkgName, repo);
-            
-            // Обновляем список установленных пакетов
-            await checkInstalledPackages();
-            
-            // Мгновенно обновляем страницу пакета
-            if (currentPackagePage) {
-              window.renderPackagePage(currentPackagePage.name, currentPackagePage.repo);
-            }
-          }, 500); // Уменьшаем задержку для мгновенного обновления
-        } else if (data.progress === 100 && !data.success) {
-          // Если прогресс 100% но нет флага success, ждем немного
-          setTimeout(() => {
-            hideProgress();
-            currentProcess = null;
-            // Обновляем список установленных пакетов
-            checkInstalledPackages();
-            // Обновляем страницу пакета
-            if (currentPackagePage) {
-              window.renderPackagePage(currentPackagePage.name, currentPackagePage.repo);
-            }
-          }, 1000);
+        if (!confirm(warningMessage)) {
+          // Пользователь отменил установку
+          return;
         }
       }
-    });
-    
-    // Выполняем действие
-    const result = isInstalled 
-      ? await window.api.removePackage(pkgName, repo)
-      : await window.api.installPackage(pkgName, repo);
-    
-    if (!result.success) {
-      hideProgress();
-      currentProcess = null;
-      showError(
-        action === 'install' ? 'Ошибка установки' : 'Ошибка удаления',
-        result.error || 'Неизвестная ошибка'
-      );
+      
+      // Продолжаем установку
+      showProgress('install', pkgName);
+      const result = await window.api.installPackage(pkgName, repo);
+      if (result.success) {
+        showSuccess('installed', pkgName, repo);
+        await checkInstalledPackages();
+      } else {
+        showError('Install Error', result.error || 'Failed to install package');
+      }
+    } catch (e) {
+      showError('Install Error', e.message || 'Failed to install package');
     }
-    
-  } catch (error) {
     hideProgress();
-    currentProcess = null;
-    showError('Ошибка', error.message || 'Произошла ошибка при выполнении операции');
   }
 }
 
@@ -581,6 +543,17 @@ const i18n = {
     remove: 'Remove',
     debugCheckAllowed: 'Check allowed',
     debugApiAvailable: 'API available',
+    moreOptions: 'More options',
+    systemUpdate: 'System update',
+    cacheCleanup: 'Cache cleanup',
+    dependencyManagement: 'Dependency management',
+    restore: 'Restore',
+    useArchAudit: 'Use arch-audit to check for vulnerabilities',
+    installingArchAudit: 'Installing arch-audit...',
+    archAuditInstallError: 'Failed to install arch-audit',
+    archAuditEnabled: 'arch-audit enabled',
+    archAuditDisabled: 'arch-audit disabled',
+    archAuditFoundThreat: 'Arch-audit found a vulnerability in this package. Are you sure you want to continue installation?',
   },
   ru: {
     welcome: 'Добро пожаловать',
@@ -616,6 +589,17 @@ const i18n = {
     remove: 'Удалить',
     debugCheckAllowed: 'Проверка разрешена',
     debugApiAvailable: 'API доступен',
+    moreOptions: 'Дополнительно',
+    systemUpdate: 'Обновление системы',
+    cacheCleanup: 'Очистка кеша',
+    dependencyManagement: 'Управление зависимостями',
+    restore: 'Восстановление',
+    useArchAudit: 'Использовать arch-audit для проверки уязвимостей',
+    installingArchAudit: 'Устанавливается arch-audit...',
+    archAuditInstallError: 'Не удалось установить arch-audit',
+    archAuditEnabled: 'arch-audit включён',
+    archAuditDisabled: 'arch-audit выключен',
+    archAuditFoundThreat: 'Arch-audit нашёл опасность в этом пакете. Уверены, что хотите продолжить установку?',
   },
   zh: {
     welcome: '欢迎', 
@@ -651,6 +635,17 @@ const i18n = {
     remove: '删除',
     debugCheckAllowed: '检查已允许',
     debugApiAvailable: 'API可用',
+    moreOptions: '更多选项',
+    systemUpdate: '系统更新',
+    cacheCleanup: '缓存清理',
+    dependencyManagement: '依赖管理',
+    restore: '恢复',
+    useArchAudit: '使用 arch-audit 检查漏洞',
+    installingArchAudit: '正在安装 arch-audit...',
+    archAuditInstallError: '无法安装 arch-audit',
+    archAuditEnabled: 'arch-audit 已启用',
+    archAuditDisabled: 'arch-audit 已禁用',
+    archAuditFoundThreat: 'arch-audit 在软件包中发现漏洞。您确定要继续安装吗？',
   },
   es: {
     welcome: 'Bienvenido', 
@@ -686,6 +681,17 @@ const i18n = {
     remove: 'Eliminar',
     debugCheckAllowed: 'Verificación permitida',
     debugApiAvailable: 'API disponible',
+    moreOptions: 'Más opciones',
+    systemUpdate: 'Actualizar sistema',
+    cacheCleanup: 'Limpiar caché',
+    dependencyManagement: 'Administración de dependencias',
+    restore: 'Restaurar',
+    useArchAudit: 'Usar arch-audit para comprobar vulnerabilidades',
+    installingArchAudit: 'Instalando arch-audit...',
+    archAuditInstallError: 'No se pudo instalar arch-audit',
+    archAuditEnabled: 'arch-audit habilitado',
+    archAuditDisabled: 'arch-audit deshabilitado',
+    archAuditFoundThreat: 'arch-audit encontró una vulnerabilidad en este paquete. ¿Está seguro de que desea continuar con la instalación?',
   },
   ja: {
     welcome: 'ようこそ', 
@@ -721,6 +727,17 @@ const i18n = {
     remove: '削除',
     debugCheckAllowed: 'チェック許可',
     debugApiAvailable: 'API利用可能',
+    moreOptions: 'その他のオプション',
+    systemUpdate: 'システムアップデート',
+    cacheCleanup: 'キャッシュクリア',
+    dependencyManagement: '依存関係管理',
+    restore: '復元',
+    useArchAudit: '脆弱性をチェックするためにarch-auditを使用',
+    installingArchAudit: 'arch-auditをインストール中...',
+    archAuditInstallError: 'arch-auditのインストールに失敗',
+    archAuditEnabled: 'arch-auditが有効',
+    archAuditDisabled: 'arch-auditが無効',
+    archAuditFoundThreat: 'このパッケージに脆弱性が見つかりました。インストールを続行してもよろしいですか？',
   },
   pt: {
     welcome: 'Bem-vindo', 
@@ -756,6 +773,17 @@ const i18n = {
     remove: 'Remover',
     debugCheckAllowed: 'Verificação permitida',
     debugApiAvailable: 'API disponível',
+    moreOptions: 'Mais opções',
+    systemUpdate: 'Atualizar sistema',
+    cacheCleanup: 'Limpar cache',
+    dependencyManagement: 'Gerenciamento de dependências',
+    restore: 'Restaurar',
+    useArchAudit: 'Usar arch-audit para verificar vulnerabilidades',
+    installingArchAudit: 'Instalando arch-audit...',
+    archAuditInstallError: 'Não foi possível instalar arch-audit',
+    archAuditEnabled: 'arch-audit habilitado',
+    archAuditDisabled: 'arch-audit desabilitado',
+    archAuditFoundThreat: 'arch-audit encontrou uma vulnerabilidade neste pacote. Você tem certeza de que deseja continuar com a instalação?',
   },
 };
 
@@ -835,6 +863,7 @@ function renderWelcomePage() {
   if (!root) return;
   let lang = getLang();
   let checkAllowed = getCheckAllowed();
+  let archAuditEnabled = getArchAuditEnabled();
   root.innerHTML = `
     <div class="welcome-block">
       <div class="welcome-title">${t('welcome')}</div>
@@ -850,6 +879,12 @@ function renderWelcomePage() {
           ${checkAllowed ? '<svg viewBox="0 0 20 20"><polyline points="4,11 9,16 16,6" stroke="#181c20" stroke-width="2" fill="none"/></svg>' : ''}
         </div>
       </div>
+      <div class="check-block">
+        <div class="check-label">${t('useArchAudit')}</div>
+        <div class="check-square${archAuditEnabled ? ' checked' : ''}" id="aac-welcome-arch-audit-square">
+          ${archAuditEnabled ? '<svg viewBox="0 0 20 20"><polyline points="4,11 9,16 16,6" stroke="#181c20" stroke-width="2" fill="none"/></svg>' : ''}
+        </div>
+      </div>
       <button class="welcome-continue-btn" id="aac-welcome-continue">${t('continue')}</button>
     </div>
   `;
@@ -861,10 +896,108 @@ function renderWelcomePage() {
     setCheckAllowed(!getCheckAllowed());
     renderWelcomePage();
   };
+  document.getElementById('aac-welcome-arch-audit-square').onclick = async () => {
+    if (!getArchAuditEnabled()) {
+      // Включаем: сначала пробуем установить arch-audit
+      const el = document.getElementById('aac-welcome-arch-audit-square');
+      if (el) el.innerHTML = '<span style="color:#4fc3f7;font-size:0.9em;">'+t('installingArchAudit')+'</span>';
+      try {
+        await installArchAudit();
+        setArchAuditEnabled(true);
+        alert(t('archAuditEnabled'));
+      } catch (e) {
+        alert(t('archAuditInstallError')+': '+e);
+        setArchAuditEnabled(false);
+      }
+    } else {
+      setArchAuditEnabled(false);
+      alert(t('archAuditDisabled'));
+    }
+    renderWelcomePage();
+  };
   document.getElementById('aac-welcome-continue').onclick = () => {
     setFirstRunDone();
     renderMainPage();
   };
+}
+
+function getArchAuditEnabled() {
+  return localStorage.getItem('aac_arch_audit') === '1';
+}
+function setArchAuditEnabled(val) {
+  localStorage.setItem('aac_arch_audit', val ? '1' : '0');
+}
+
+function installArchAudit() {
+  return new Promise((resolve, reject) => {
+    console.log('installArchAudit called');
+    console.log('window.api:', window.api);
+    console.log('window.api.installArchAudit:', window.api?.installArchAudit);
+    
+    if (window.api && window.api.installArchAudit) {
+      console.log('Starting arch-audit installation...');
+      // Показываем прогресс установки arch-audit
+      showProgress('install', 'arch-audit');
+      
+      // Настраиваем слушатель прогресса
+      window.api.onPackageProgress((data) => {
+        console.log('Package progress:', data);
+        if (data.pkgName === 'arch-audit' && data.action === 'install') {
+          updateProgress(data.progress);
+          
+          if (data.waitingForPassword) {
+            updateProgressTitle('Ожидание ввода пароля для arch-audit...');
+          } else if (data.passwordEntered) {
+            updateProgressTitle('Установка arch-audit...');
+          } else if (data.progress > 0) {
+            updateProgressTitle('Установка arch-audit...');
+          }
+          
+          if (data.error) {
+            hideProgress();
+            reject(data.error);
+          } else if (data.success) {
+            hideProgress();
+            resolve('arch-audit installed successfully');
+          }
+        }
+      });
+      
+      // Запускаем установку
+      window.api.installArchAudit().then((result) => {
+        console.log('installArchAudit result:', result);
+        if (result.success) {
+          resolve('arch-audit installed successfully');
+        } else {
+          reject(result.error || 'Failed to install arch-audit');
+        }
+      }).catch((error) => {
+        console.error('installArchAudit error:', error);
+        reject(error);
+      });
+    } else {
+      console.error('window.api or installArchAudit not available');
+      reject('arch-audit installation not available');
+    }
+  });
+}
+
+// Функция для проверки уязвимостей через arch-audit
+function checkVulnerabilities(packageName) {
+  return new Promise((resolve, reject) => {
+    if (!getArchAuditEnabled()) {
+      resolve({ hasVulnerabilities: false });
+      return;
+    }
+
+    // Проверяем уязвимости через window.api если доступен
+    if (window.api && window.api.checkVulnerabilities) {
+      window.api.checkVulnerabilities(packageName).then(resolve).catch(reject);
+    } else {
+      // Если API недоступен, просто разрешаем установку
+      resolve({ hasVulnerabilities: false });
+    }
+  });
 }
 
 function renderSettingsPage() {
@@ -872,6 +1005,7 @@ function renderSettingsPage() {
   if (!root) return;
   let lang = getLang();
   let checkAllowed = getCheckAllowed();
+  let archAuditEnabled = getArchAuditEnabled();
   root.innerHTML = `
     <div class="settings-block">
       <div class="settings-title">${t('settings')}</div>
@@ -888,6 +1022,12 @@ function renderSettingsPage() {
             ${checkAllowed ? '<svg viewBox="0 0 20 20"><polyline points="4,11 9,16 16,6" stroke="#181c20" stroke-width="2" fill="none"/></svg>' : ''}
           </div>
         </div>
+        <div class="check-block">
+          <div class="check-label">${t('useArchAudit')}</div>
+          <div class="check-square${archAuditEnabled ? ' checked' : ''}" id="settings-arch-audit-square">
+            ${archAuditEnabled ? '<svg viewBox="0 0 20 20"><polyline points="4,11 9,16 16,6" stroke="#181c20" stroke-width="2" fill="none"/></svg>' : ''}
+          </div>
+        </div>
       </div>
       <button class="settings-back-btn" id="settings-back-btn">${t('back')}</button>
     </div>
@@ -901,12 +1041,31 @@ function renderSettingsPage() {
     setCheckAllowed(!getCheckAllowed());
     renderSettingsPage();
   };
+  document.getElementById('settings-arch-audit-square').onclick = async () => {
+    if (!getArchAuditEnabled()) {
+      // Включаем: сначала пробуем установить arch-audit
+      const el = document.getElementById('settings-arch-audit-square');
+      if (el) el.innerHTML = '<span style="color:#4fc3f7;font-size:0.9em;">'+t('installingArchAudit')+'</span>';
+      try {
+        await installArchAudit();
+        setArchAuditEnabled(true);
+        alert(t('archAuditEnabled'));
+      } catch (e) {
+        alert(t('archAuditInstallError')+': '+e);
+        setArchAuditEnabled(false);
+      }
+    } else {
+      setArchAuditEnabled(false);
+      alert(t('archAuditDisabled'));
+    }
+    renderSettingsPage();
+  };
 }
 
 function renderHeader() {
   return `<div class="header" style="position:relative; display:flex; align-items:center; justify-content:center; min-height:64px;">
-    <span class="installed-icon" title="${t('installedPackages')}" onclick="window.renderInstalledPage()" style="position:absolute; top:12px; left:16px; cursor:pointer; display:flex; align-items:center;">
-      <img src="icons/installed.webp" alt="installed" style="width:32px; height:32px; filter:invert(0.8);">
+    <span class="more-icon" title="${t('moreOptions')}" onclick="window.renderMoreOptionsPage()" style="position:absolute; top:12px; left:16px; cursor:pointer; display:flex; align-items:center;">
+      <img src="icons/more.png" alt="more" style="width:32px; height:32px; filter:invert(0.8);">
     </span>
     <svg class="arch-logo" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg" style="height:48px; width:48px;">
       <path d="M32 4L59 60H5L32 4Z" fill="#4fc3f7"/>
@@ -1462,6 +1621,45 @@ async function loadMoreInstalledPackages() {
   currentInstalledPage++;
   await displayInstalledPackagesPage();
 }
+
+window.renderMoreOptionsPage = function() {
+  const root = document.getElementById('root');
+  if (!root) return;
+  root.innerHTML = `
+    ${renderHeader()}
+    <style>
+      .more-options-btn {
+        font-size: 1.25rem;
+        padding: 20px 0;
+        background: #2196f3;
+        color: #fff;
+        border: none;
+        border-radius: 12px;
+        cursor: pointer;
+        font-weight: 600;
+        box-shadow: 0 2px 8px #0002;
+        transition: background 0.2s, transform 0.15s;
+      }
+      .more-options-btn:hover {
+        background: #1976d2;
+        transform: translateY(-2px) scale(1.03);
+      }
+    </style>
+    <div class="more-options-block" style="max-width:500px;margin:32px auto 0 auto;padding:32px 24px;background:#23272e;border-radius:18px;box-shadow:0 2px 16px #0002;">
+      <h2 class="more-options-title" style="text-align:center;font-size:1.5rem;margin-bottom:32px;">Arch App Center</h2>
+      <div class="more-options-buttons" style="display:flex;flex-direction:column;gap:18px;">
+        <button class="more-options-btn" onclick="window.renderInstalledPage()">${t('installedPackages')}</button>
+        <button class="more-options-btn" onclick="alert('Функция обновления системы в разработке')">${t('systemUpdate')}</button>
+        <button class="more-options-btn" onclick="alert('Функция очистки кеша в разработке')">${t('cacheCleanup')}</button>
+        <button class="more-options-btn" onclick="alert('Управление зависимостями в разработке')">${t('dependencyManagement')}</button>
+        <button class="more-options-btn" onclick="alert('Восстановление в разработке')">${t('restore')}</button>
+      </div>
+      <div style="text-align:center;margin-top:32px;">
+        <button class="search-back-btn" onclick="renderMainPage()">${t('back')}</button>
+      </div>
+    </div>
+  `;
+};
 
 document.addEventListener('DOMContentLoaded', () => {
   // Добавляем элементы прогресс-бара и ошибок

@@ -1,6 +1,6 @@
 {
   "name": "arch-app-center",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "A modern graphical package manager for Arch Linux with pacman and AUR support. Built with Electron for a native desktop experience.",
   "main": "build/main.js",
   "scripts": {

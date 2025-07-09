@@ -14,8 +14,14 @@ makedepends=('npm' 'nodejs' 'typescript')
 source=("git+https://github.com/Artym227/Arch-App-Center.git")
 sha256sums=('SKIP')
 
+# Автоматическое извлечение версии из package.json
+pkgver() {
+  cd "$srcdir/Arch-App-Center"
+  node -p "require('./package.json').version"
+}
+
 build() {
-  cd "$srcdir/arch-app-center"
+  cd "$srcdir/Arch-App-Center"
   # Install npm dependencies
   npm install
   # Build TypeScript to JavaScript
@@ -25,7 +31,7 @@ build() {
 }
 
 package() {
-  cd "$srcdir/arch-app-center"
+  cd "$srcdir/Arch-App-Center"
   
   # Create necessary directories
   install -dm755 "$pkgdir/usr/lib/$pkgname"

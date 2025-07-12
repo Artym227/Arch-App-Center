@@ -1,5 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron';
 
+// (Весь импорт и функция getUpgradablePackages с exec удалены)
+
 contextBridge.exposeInMainWorld('api', {
   getPacmanPackages: () => ipcRenderer.invoke('get-pacman-packages'),
   getYayPackages: () => ipcRenderer.invoke('get-yay-packages'),
@@ -11,4 +13,10 @@ contextBridge.exposeInMainWorld('api', {
   },
   installArchAudit: () => ipcRenderer.invoke('install-arch-audit'),
   checkVulnerabilities: (packageName: string) => ipcRenderer.invoke('check-vulnerabilities', packageName),
+  updateDatabase: () => ipcRenderer.invoke('refresh-package-databases'),
+  systemUpdate: () => ipcRenderer.invoke('update-system'),
+  getOutdatedPackages: () => ipcRenderer.invoke('get-outdated-packages'),
+  updateAllPackages: () => ipcRenderer.invoke('update-all-packages'),
+  updateSinglePackage: (pkgName: string) => ipcRenderer.invoke('update-single-package', pkgName),
+  getUpgradablePackages: () => ipcRenderer.invoke('get-outdated-packages'),
 }); 

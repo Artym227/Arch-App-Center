@@ -289,6 +289,7 @@ let installedItemsPerPage = 30;
 // Глобальные переменные
 let currentProcess = null;
 let currentPackagePage = null;
+let finalizeInterval = null;
 
 // Добавляем HTML элементы для прогресс-бара и ошибок
 function addProgressAndErrorElements() {
@@ -343,41 +344,103 @@ function addProgressAndErrorElements() {
 
 // Функции для работы с прогресс-баром
 function showProgress(action, pkgName) {
-  const container = document.getElementById('progress-container');
+  let progressBlock = document.getElementById('aac-progress-block');
+  if (!progressBlock) {
+    progressBlock = document.createElement('div');
+    progressBlock.id = 'aac-progress-block';
+    progressBlock.style.position = 'fixed';
+    progressBlock.style.top = '0';
+    progressBlock.style.left = '0';
+    progressBlock.style.width = '100vw';
+    progressBlock.style.height = '100vh';
+    progressBlock.style.background = 'rgba(30,34,40,0.82)';
+    progressBlock.style.zIndex = '9999';
+    progressBlock.style.display = 'flex';
+    progressBlock.style.alignItems = 'center';
+    progressBlock.style.justifyContent = 'center';
+    progressBlock.innerHTML = `
+      <div style="background:#23272e;padding:36px 32px 32px 32px;border-radius:18px;box-shadow:0 2px 16px #0004;min-width:340px;max-width:90vw;">
+        <div id="aac-progress-title" style="color:#4fc3f7;font-size:1.18rem;font-weight:600;text-align:center;margin-bottom:18px;"></div>
+        <div id="aac-progress-terminal" style="background:#181b20;color:#b0b0b0;font-family:monospace;font-size:1.08rem;padding:16px 20px 12px 20px;border-radius:8px;min-height:120px;max-height:320px;width:600px;max-width:90vw;overflow-y:auto;display:none;margin-top:12px;"></div>
+        <div style="text-align:center;margin-top:18px;">
+          <button id="aac-progress-cancel-btn" style="background:#e57373;color:#fff;border:none;border-radius:8px;padding:7px 18px;font-size:1rem;font-weight:500;cursor:pointer;box-shadow:0 1px 4px #0002;">Отмена</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(progressBlock);
+    document.getElementById('aac-progress-cancel-btn').onclick = cancelPackageAction;
+  }
+  progressBlock.style.display = 'flex';
+  updateProgress(0);
+  updateProgressTitleByStage('prepare', pkgName);
+  // Показываем блок терминала всегда
+  const terminalBlock = document.getElementById('aac-progress-terminal');
+  if (terminalBlock) {
+    terminalBlock.style.display = 'block';
+    terminalBlock.innerHTML = '';
+  }
+}
+
+// Модифицирую updateProgress для поддержки вывода последних строк терминала
+function updateProgress(progress, stage, stagePkg, lastLines) {
+  // Обновляем вывод терминала, если есть
+  const terminalBlock = document.getElementById('aac-progress-terminal');
+  if (terminalBlock && lastLines && Array.isArray(lastLines)) {
+    terminalBlock.style.display = 'block';
+    terminalBlock.innerHTML = lastLines.map(line => `<div>${line.replace(/</g,'&lt;').replace(/>/g,'&gt;')}</div>`).join('');
+    terminalBlock.scrollTop = terminalBlock.scrollHeight;
+  }
+}
+
+// Модифицирую глобальный обработчик прогресса
+if (window.api && window.api.onPackageProgress) {
+  window.api.onPackageProgress((data) => {
+    if (data && typeof data.progress === 'number') {
+      updateProgress(data.progress, data.stage, data.stagePkg, data.lastLines);
+    }
+    if (data && data.waitingForPassword) {
+      updateProgressTitle('Ожидание ввода пароля...');
+    }
+    if (data && data.error) {
+      hideProgress();
+      showError('Ошибка', data.error);
+    }
+    if (data && data.success) {
+      hideProgress();
+      showSuccess(data.action, data.pkgName, data.repo || '');
+    }
+  });
+}
+
+function updateProgressTitleByStage(stage, stagePkg) {
   const title = document.getElementById('progress-title');
-  const percent = document.getElementById('progress-percent');
-  const fill = document.getElementById('progress-fill');
-  
-  if (container && title && percent && fill) {
-    title.textContent = action === 'install' ? `Установка ${pkgName}...` : `Удаление ${pkgName}...`;
-    percent.textContent = '0%';
-    fill.style.width = '0%';
-    container.classList.add('show');
+  if (!title) return;
+  if (title._finalizeAnim) { title._finalizeAnim = false; }
+  if (stage === 'prepare') {
+    title.textContent = 'Подготовка...';
+  } else if (stage === 'download') {
+    title.textContent = stagePkg ? `Загрузка: ${stagePkg}` : 'Загрузка пакетов...';
+  } else if (stage === 'install') {
+    title.textContent = stagePkg ? `Установка: ${stagePkg}` : 'Установка...';
   }
 }
 
-function updateProgress(progress) {
-  const percent = document.getElementById('progress-percent');
-  const fill = document.getElementById('progress-fill');
-  
-  if (percent && fill) {
-    percent.textContent = `${progress}%`;
-    fill.style.width = `${progress}%`;
-  }
-}
-
-function updateProgressTitle(title) {
-  const titleElement = document.getElementById('progress-title');
-  if (titleElement) {
-    titleElement.textContent = title;
-  }
+function updateProgressTitle(text) {
+  const title = document.getElementById('progress-title');
+  if (title) title.textContent = text;
 }
 
 function hideProgress() {
   const container = document.getElementById('progress-container');
   if (container) {
     container.classList.remove('show');
+    container.style.display = 'none';
   }
+  const block = document.getElementById('aac-progress-block');
+  if (block) block.style.display = 'none';
+  currentProcessAction = null;
+  currentProcessPkg = null;
+  if (finalizeInterval) clearInterval(finalizeInterval);
 }
 
 // Функции для работы с блоком ошибок
@@ -387,17 +450,15 @@ function showError(title, message) {
   const errorMessage = document.getElementById('error-message');
   
   if (overlay && errorTitle && errorMessage) {
-    errorTitle.textContent = title;
-    errorMessage.textContent = message;
+    errorTitle.textContent = title || 'Ошибка';
+    errorMessage.textContent = message || 'Произошла ошибка при выполнении операции.';
     overlay.classList.add('show');
   }
 }
 
 function hideError() {
   const overlay = document.getElementById('error-overlay');
-  if (overlay) {
-    overlay.classList.remove('show');
-  }
+  if (overlay) overlay.classList.remove('show');
 }
 
 // Функции для работы с окном уведомлений об успехе
@@ -415,32 +476,58 @@ function showSuccess(action, pkgName, repo) {
       successMessage.textContent = 'Пакет был успешно установлен в систему.';
       successIcon.textContent = '✓';
       successIcon.style.color = '#48bb78';
-    } else {
+      // Обновляем надпись на кнопке только при показе окна успеха
+      updateInstallRemoveButton(pkgName, repo);
+    } else if (action === 'removed') {
       successTitle.textContent = 'Удаление завершено!';
-      successMessage.textContent = 'Пакет был успешно удален из системы.';
+      successMessage.textContent = 'Пакет был успешно удалён из системы.';
       successIcon.textContent = '🗑️';
       successIcon.style.color = '#f56565';
+      // Обновляем надпись на кнопке только при показе окна успеха
+      updateInstallRemoveButton(pkgName, repo);
+    } else if (action === 'system-update') {
+      successTitle.textContent = 'Обновление системы завершено!';
+      successMessage.textContent = 'Все пакеты были успешно обновлены.';
+      successIcon.textContent = '⟳';
+      successIcon.style.color = '#48bb78';
+    } else if (action === 'single-update') {
+      successTitle.textContent = 'Пакет обновлён!';
+      successMessage.textContent = `Пакет ${pkgName} был успешно обновлён.`;
+      successIcon.textContent = '⟳';
+      successIcon.style.color = '#48bb78';
+    } else {
+      successTitle.textContent = 'Успешно!';
+      successMessage.textContent = 'Операция выполнена успешно.';
+      successIcon.textContent = '✓';
+      successIcon.style.color = '#48bb78';
     }
     
     successPackageName.textContent = pkgName;
-    successPackageRepo.textContent = `Репозиторий: ${repo}`;
+    successPackageRepo.textContent = repo ? `Репозиторий: ${repo}` : '';
     overlay.classList.add('show');
   }
 }
 
 function hideSuccess() {
   const overlay = document.getElementById('success-overlay');
-  if (overlay) {
-    overlay.classList.remove('show');
+  if (overlay) overlay.classList.remove('show');
+  // После закрытия окна успеха пробуем обновить кнопку, если пользователь на странице пакета
+  if (currentPackagePage) {
+    updateInstallRemoveButton(currentPackagePage.name, currentPackagePage.repo);
   }
 }
 
 // Функция для отмены текущего процесса
 function cancelPackageAction() {
-  if (currentProcess && window.api) {
-    window.api.cancelPackageAction();
+  if (window.api && window.api.cancelPackageAction) {
+    window.api.cancelPackageAction().then(() => {
     hideProgress();
-    currentProcess = null;
+      showError('Операция отменена', 'Установка/обновление пакета была отменена пользователем.');
+    });
+    currentProcessAction = null;
+    currentProcessPkg = null;
+  } else {
+    hideProgress();
   }
 }
 
@@ -452,8 +539,8 @@ async function handlePackageAction(pkgName, repo, isInstalled) {
     try {
       const result = await window.api.removePackage(pkgName, repo);
       if (result.success) {
-        showSuccess('removed', pkgName, repo);
         await checkInstalledPackages();
+        showSuccess('removed', pkgName, repo);
       } else {
         showError('Remove Error', result.error || 'Failed to remove package');
       }
@@ -487,8 +574,8 @@ async function handlePackageAction(pkgName, repo, isInstalled) {
       showProgress('install', pkgName);
       const result = await window.api.installPackage(pkgName, repo);
       if (result.success) {
-        showSuccess('installed', pkgName, repo);
         await checkInstalledPackages();
+        showSuccess('installed', pkgName, repo);
       } else {
         showError('Install Error', result.error || 'Failed to install package');
       }
@@ -943,7 +1030,7 @@ function installArchAudit() {
       window.api.onPackageProgress((data) => {
         console.log('Package progress:', data);
         if (data.pkgName === 'arch-audit' && data.action === 'install') {
-          updateProgress(data.progress);
+          updateProgress(data.progress, data.stage, data.stagePkg);
           
           if (data.waitingForPassword) {
             updateProgressTitle('Ожидание ввода пароля для arch-audit...');
@@ -1043,20 +1130,22 @@ function renderSettingsPage() {
   };
   document.getElementById('settings-arch-audit-square').onclick = async () => {
     if (!getArchAuditEnabled()) {
+      // Проверяем установлен ли arch-audit
+      await checkInstalledPackages();
+      if (isArchAuditInstalled()) {
+        setArchAuditEnabled(true);
+        renderSettingsPage();
+        return;
+      }
       // Включаем: сначала пробуем установить arch-audit
-      const el = document.getElementById('settings-arch-audit-square');
-      if (el) el.innerHTML = '<span style="color:#4fc3f7;font-size:0.9em;">'+t('installingArchAudit')+'</span>';
       try {
         await installArchAudit();
         setArchAuditEnabled(true);
-        alert(t('archAuditEnabled'));
       } catch (e) {
-        alert(t('archAuditInstallError')+': '+e);
         setArchAuditEnabled(false);
       }
     } else {
       setArchAuditEnabled(false);
-      alert(t('archAuditDisabled'));
     }
     renderSettingsPage();
   };
@@ -1325,6 +1414,28 @@ function getPackageButtonText(isInstalled) {
   }
 }
 
+// Добавляю функцию для обновления кнопки install/remove на странице пакета
+function updateInstallRemoveButton(pkgName, repo) {
+  // Проверяем, что мы на странице этого пакета
+  if (!currentPackagePage || currentPackagePage.name !== pkgName || currentPackagePage.repo !== repo) return;
+  const btn = document.querySelector('.package-install-btn');
+  if (!btn) return;
+  // Проверяем актуальное состояние (установлен или нет)
+  const wasInstalled = btn.getAttribute('data-installed') === '1';
+  const isInstalled = isPackageInstalled(pkgName, repo);
+  btn.textContent = getPackageButtonText(isInstalled);
+  btn.setAttribute('onclick', `handlePackageAction('${pkgName}','${repo}',${isInstalled})`);
+  btn.setAttribute('data-installed', isInstalled ? '1' : '0');
+  // Обновляем состояние в currentPackagePage
+  currentPackagePage.isInstalled = isInstalled;
+  // Если только что был установлен (install -> remove), перерисовать страницу
+  if (!wasInstalled && isInstalled) {
+    setTimeout(() => {
+      renderPackagePage(currentPackagePage.name, currentPackagePage.repo);
+    }, 100);
+  }
+}
+
 window.renderPackagePage = async function(name, repo) {
   // Устанавливаем текущую страницу пакета для мгновенного обновления
   currentPackagePage = { name, repo };
@@ -1354,7 +1465,7 @@ window.renderPackagePage = async function(name, repo) {
     return;
   }
   
-  // Получаем дополнительные поля для AUR
+  // Получаем дополнительные поля для AUR/pacman асинхронно
   let extra = {};
   if (repo === 'AUR') {
     const url = `https://aur.archlinux.org/rpc/?v=5&type=info&arg[]=${encodeURIComponent(name)}`;
@@ -1367,10 +1478,7 @@ window.renderPackagePage = async function(name, repo) {
     } catch (e) {
       console.error('Error fetching AUR info:', e);
     }
-  }
-  
-  // Получаем дополнительные поля для pacman
-  if (repo === 'pacman') {
+  } else if (repo === 'pacman') {
     const url = `https://archlinux.org/packages/search/json/?q=${encodeURIComponent(name)}`;
     try {
       const res = await fetch(url);
@@ -1409,7 +1517,7 @@ window.renderPackagePage = async function(name, repo) {
       <button class="package-install-btn" onclick="handlePackageAction('${pkg.name}','${repo}',${isInstalled})">${buttonText}</button>
       <div class="package-buttons-row ${!showBackToSearch && !showBackToInstalled ? 'single-button' : ''}">
         ${showBackToSearch ? `<button class="package-back-search-btn" onclick="renderSearchPage('${lastSearchQuery}')">${t('backToSearch')}</button>` : ''}
-        ${showBackToInstalled ? `<button class="package-back-search-btn" onclick="window.renderInstalledPage()">${t('back')}</button>` : ''}
+        ${showBackToInstalled ? `<button class="package-back-search-btn" onclick="window.renderInstalledPage()">Назад к пакетам</button>` : ''}
         <button class="package-back-btn" onclick="renderMainPage()" style="${!showBackToSearch && !showBackToInstalled ? 'margin-left: 0;' : ''}">${t('back')}</button>
       </div>
     </div>
@@ -1470,158 +1578,152 @@ async function loadInstalledPackages() {
     return;
   }
   
-  console.log('loadInstalledPackages called');
-  console.log('getCheckAllowed():', getCheckAllowed());
-  console.log('window.api:', window.api);
-  
   try {
-    // Обновляем список установленных пакетов
-    console.log('Calling checkInstalledPackages...');
     await checkInstalledPackages();
-    
-    console.log('Getting installed packages from localStorage...');
     const installed = await getInstalledPackages();
-    console.log('Installed packages from localStorage:', installed);
-    
-    const allPackages = [
+    // Объединяем pacman и AUR пакеты в один список
+    const allPkgs = [
       ...installed.pacman.map(name => ({ name, repo: 'pacman' })),
       ...installed.aur.map(name => ({ name, repo: 'AUR' }))
     ];
-    
-    console.log('All packages:', allPackages);
-    
-    if (allPackages.length === 0) {
-      console.log('No packages found, showing message');
+    currentInstalledPackages = allPkgs;
+    // Пагинация
+    const total = allPkgs.length;
+    const totalPages = Math.ceil(total / installedItemsPerPage);
+    if (currentInstalledPage >= totalPages) currentInstalledPage = 0;
+    const start = currentInstalledPage * installedItemsPerPage;
+    const end = Math.min(start + installedItemsPerPage, total);
+    const pagePkgs = allPkgs.slice(start, end);
       block.innerHTML = `
-        <div style="text-align:center; color:#b0bac9; font-size:1.1rem; margin:32px 0;">
-          ${t('noInstalledPackages')}<br>
-          <small style="color:#666;">${t('debugCheckAllowed')}: ${getCheckAllowed()}, ${t('debugApiAvailable')}: ${!!window.api}</small>
-        </div>
-      `;
-      return;
-    }
-    
-    // Сохраняем все пакеты для пагинации
-    currentInstalledPackages = allPackages;
-    currentInstalledPage = 0;
-    
-    // Показываем первые 30 пакетов
-    await displayInstalledPackagesPage();
-    
-  } catch (e) {
-    block.innerHTML = `
-      <div style="text-align:center; color:#e57373; font-size:1.1rem; margin:32px 0;">${t('error')}</div>
-    `;
-  }
-}
-
-// Функция для отображения страницы установленных пакетов
-async function displayInstalledPackagesPage() {
-  const block = document.getElementById('installed-results-block');
-  if (!block) return;
-  
-  const allPackages = currentInstalledPackages;
-  const startIndex = 0;
-  const endIndex = Math.min((currentInstalledPage + 1) * installedItemsPerPage, allPackages.length);
-  const displayedPackages = allPackages.slice(startIndex, endIndex);
-  
-  // Проверяем, есть ли еще пакеты для показа
-  const hasMore = endIndex < allPackages.length;
-  
-  // Показываем информацию о количестве пакетов
-  block.innerHTML = `
-    <div class="search-results-info">
-      ${t('found')} ${allPackages.length} ${t('packages')}
-    </div>
-    <div style="text-align:center; color:#4fc3f7; font-size:1.1rem; margin:16px 0;">${t('loading')}</div>
-  `;
-  
-  // Получаем информацию о пакетах по частям
-  const packagesWithInfo = [];
-  let loadedCount = 0;
-  
-  for (const pkg of displayedPackages) {
-    try {
-      let pkgInfo = null;
-      if (pkg.repo === 'AUR') {
-        const aurResults = await searchAUR(pkg.name);
-        pkgInfo = aurResults.find(p => p.name === pkg.name);
-      } else {
-        const pacmanResults = await searchPacman(pkg.name);
-        pkgInfo = pacmanResults.find(p => p.name === pkg.name);
-      }
-      
-      if (pkgInfo) {
-        packagesWithInfo.push({
-          ...pkgInfo,
-          repo: pkg.repo
-        });
-      } else {
-        // Если не удалось получить информацию, показываем базовую
-        packagesWithInfo.push({
-          name: pkg.name,
-          desc: '',
-          repo: pkg.repo
-        });
-      }
-      
-      loadedCount++;
-      
-      // Обновляем прогресс каждые 5 пакетов
-      if (loadedCount % 5 === 0 || loadedCount === displayedPackages.length) {
-        block.innerHTML = `
-          <div class="search-results-info">
-            ${t('found')} ${allPackages.length} ${t('packages')}
-          </div>
-          <div style="text-align:center; color:#4fc3f7; font-size:1.1rem; margin:16px 0;">
-            ${t('loading')} (${loadedCount}/${displayedPackages.length})
-          </div>
-        `;
-      }
-      
-    } catch (e) {
-      // В случае ошибки показываем базовую информацию
-      packagesWithInfo.push({
-        name: pkg.name,
-        desc: '',
-        repo: pkg.repo
-      });
-      loadedCount++;
-    }
-  }
-  
-  // Отображаем результаты
-  block.innerHTML = `
-    <div class="search-results-info">
-      ${t('found')} ${allPackages.length} ${t('packages')}
-    </div>
-    <ul class="search-results-list">
-      ${packagesWithInfo.map(pkg => `
-        <li class="search-result-item">
-          <div class="search-result-inner">
-            <div class="search-result-title">${pkg.name} <span style="font-size:0.9em; color:#4fc3f7; font-weight:400;">[${pkg.repo}]</span></div>
-            <div class="search-result-desc">${pkg.desc || ''}</div>
-            <button class="search-result-link" onclick="window.renderPackagePage('${pkg.name}','${pkg.repo}')">${t('about')}</button>
-          </div>
+      <style>
+        .installed-list {
+          list-style: none;
+          padding: 0;
+          margin: 0;
+          display: flex;
+          flex-direction: column;
+          gap: 18px;
+        }
+        .installed-item {
+          background: #23272e;
+          border-radius: 14px;
+          box-shadow: 0 2px 8px #0002;
+          padding: 18px 20px;
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          transition: box-shadow 0.2s, transform 0.15s;
+        }
+        .installed-item:hover {
+          box-shadow: 0 4px 16px #0004;
+          transform: translateY(-2px) scale(1.01);
+        }
+        .installed-title {
+          font-size: 1.15rem;
+          font-weight: 600;
+          color: #2196f3;
+          cursor: pointer;
+          transition: color 0.2s;
+        }
+        .installed-title:hover {
+          color: #1976d2;
+          text-decoration: underline;
+        }
+        .installed-about-btn {
+          background: #2196f3;
+          color: #fff;
+          border: none;
+          border-radius: 8px;
+          padding: 8px 18px;
+          font-size: 1rem;
+          font-weight: 500;
+          cursor: pointer;
+          box-shadow: 0 1px 4px #0001;
+          transition: background 0.2s, transform 0.15s;
+        }
+        .installed-about-btn:hover {
+          background: #1976d2;
+          transform: scale(1.04);
+        }
+        .installed-pagination {
+          display: flex;
+          justify-content: center;
+          gap: 16px;
+          margin: 24px 0;
+        }
+        .installed-pagination-btn {
+          background: #2196f3;
+          color: #fff;
+          border: none;
+          border-radius: 8px;
+          padding: 7px 18px;
+          font-size: 1rem;
+          font-weight: 500;
+          cursor: pointer;
+          box-shadow: 0 1px 4px #0001;
+          transition: background 0.2s, transform 0.15s;
+        }
+        .installed-pagination-btn:disabled {
+          background: #3a4a5a;
+          color: #b0b0b0;
+          cursor: not-allowed;
+        }
+      </style>
+      <div class="installed-info" style="margin-bottom:18px; text-align:center; font-size:1.18rem; font-weight:600; color:#4fc3f7;">${t('found')} ${total} ${t('packages')}</div>
+      <ul class="installed-list">
+        ${pagePkgs.length === 0 ? `<li style='color:#e57373;text-align:center;margin:32px 0;'>${t('noInstalledPackages')}</li>` :
+          pagePkgs.map(pkg => `
+            <li class="installed-item">
+              <span class="installed-title" onclick="window.renderPackagePage('${pkg.name}','${pkg.repo}')">${pkg.name} <span style=\"font-size:0.9em; color:#4fc3f7; font-weight:400;\">[${pkg.repo}]</span></span>
+              <button class="installed-about-btn" onclick="window.renderPackagePage('${pkg.name}','${pkg.repo}')">${t('about')}</button>
         </li>
       `).join('')}
     </ul>
-    ${hasMore ? `
-      <div class="load-more-container">
-        <button class="load-more-btn" onclick="loadMoreInstalledPackages()">
-          ${t('loadMore')} (${endIndex}/${allPackages.length})
-        </button>
+      <div class="installed-pagination">
+        <button class="installed-pagination-btn" id="installed-prev-btn" ${currentInstalledPage === 0 ? 'disabled' : ''}>Назад</button>
+        <span style="align-self:center; font-size:1.08rem; color:#4fc3f7; font-weight:500;">Страница ${total === 0 ? 0 : currentInstalledPage + 1} из ${totalPages}</span>
+        <button class="installed-pagination-btn" id="installed-next-btn" ${currentInstalledPage >= totalPages - 1 ? 'disabled' : ''}>Далее</button>
       </div>
-    ` : ''}
-  `;
-}
-
-// Функция для загрузки дополнительных установленных пакетов
-async function loadMoreInstalledPackages() {
+    `;
+    document.getElementById('installed-prev-btn').onclick = () => {
+      if (currentInstalledPage > 0) {
+        currentInstalledPage--;
+        loadInstalledPackages();
+      }
+    };
+    document.getElementById('installed-next-btn').onclick = () => {
+      if (currentInstalledPage < totalPages - 1) {
   currentInstalledPage++;
-  await displayInstalledPackagesPage();
+        loadInstalledPackages();
+      }
+    };
+  } catch (e) {
+    console.error('Error checking installed packages:', e);
+  }
 }
 
+// Глобальный обработчик прогресса для всех операций
+if (window.api && window.api.onPackageProgress) {
+  window.api.onPackageProgress((data) => {
+    if (data && typeof data.progress === 'number') {
+      updateProgress(data.progress, data.stage, data.stagePkg, data.lastLines);
+    }
+    if (data && data.waitingForPassword) {
+      updateProgressTitle('Ожидание ввода пароля...');
+    }
+    if (data && data.error) {
+      hideProgress();
+      showError('Ошибка', data.error);
+    }
+    if (data && data.success) {
+      hideProgress();
+      showSuccess(data.action, data.pkgName, data.repo || '');
+    }
+  });
+}
+
+// Удаляю новую функцию renderMoreOptionsPage
+// Вставляю старую реализацию:
 window.renderMoreOptionsPage = function() {
   const root = document.getElementById('root');
   if (!root) return;
@@ -1649,10 +1751,11 @@ window.renderMoreOptionsPage = function() {
       <h2 class="more-options-title" style="text-align:center;font-size:1.5rem;margin-bottom:32px;">Arch App Center</h2>
       <div class="more-options-buttons" style="display:flex;flex-direction:column;gap:18px;">
         <button class="more-options-btn" onclick="window.renderInstalledPage()">${t('installedPackages')}</button>
-        <button class="more-options-btn" onclick="alert('Функция обновления системы в разработке')">${t('systemUpdate')}</button>
+        <button class="more-options-btn" onclick="window.renderSystemUpdatePage()">${t('systemUpdate')}</button>
         <button class="more-options-btn" onclick="alert('Функция очистки кеша в разработке')">${t('cacheCleanup')}</button>
         <button class="more-options-btn" onclick="alert('Управление зависимостями в разработке')">${t('dependencyManagement')}</button>
-        <button class="more-options-btn" onclick="alert('Восстановление в разработке')">${t('restore')}</button>
+        <button class="more-options-btn" onclick="alert('Резервное копирование в разработке')">backup</button>
+        <button class="more-options-btn" onclick="alert('Страница обновления зеркал в разработке')">Обновление зеркал</button>
       </div>
       <div style="text-align:center;margin-top:32px;">
         <button class="search-back-btn" onclick="renderMainPage()">${t('back')}</button>
@@ -1661,46 +1764,166 @@ window.renderMoreOptionsPage = function() {
   `;
 };
 
+window.renderSystemUpdatePage = async function() {
+  const root = document.getElementById('root');
+  if (!root) return;
+  async function reloadPage() {
+    await window.renderSystemUpdatePage();
+  }
+  root.innerHTML = `
+    ${renderHeader()}
+    <div class="system-update-block" style="max-width:700px;margin:32px auto 0 auto;padding:32px 24px;background:#23272e;border-radius:18px;box-shadow:0 2px 16px #0002;">
+      <h2 class="system-update-title" style="text-align:center;font-size:1.5rem;margin-bottom:28px;">${t('systemUpdate')}</h2>
+      <div style="display:flex;justify-content:center;margin-bottom:18px;">
+        <button class="system-update-btn" id="update-db-btn" style="background:#2196f3;color:#fff;border:none;border-radius:12px;padding:12px 28px;font-size:1.08rem;font-weight:600;box-shadow:0 2px 8px #0002;cursor:pointer;transition:background 0.2s,transform 0.15s;">Обновить базу данных пакетов</button>
+      </div>
+      <div style="display:flex;justify-content:center;margin-bottom:28px;">
+        <button class="system-update-btn" id="update-system-btn" style="background:#2196f3;color:#fff;border:none;border-radius:12px;padding:12px 28px;font-size:1.08rem;font-weight:600;box-shadow:0 2px 8px #0002;cursor:pointer;transition:background 0.2s,transform 0.15s;">Обновить систему</button>
+      </div>
+      <div id="system-optional-update-list-block" style="margin-top:10px;"></div>
+      <div id="system-update-list-block" style="margin-top:30px;"></div>
+      <div id="system-update-empty-block" style="margin-top:30px;"></div>
+      <div style="text-align:center;margin-top:32px;">
+        <button class="search-back-btn" onclick="renderMainPage()">${t('back')}</button>
+      </div>
+    </div>
+  `;
+  document.getElementById('update-db-btn').onclick = async () => {
+    if (!window.api || !window.api.updateDatabase) return;
+    showProgress('system-update', 'db');
+    try {
+      const result = await window.api.updateDatabase();
+      if (result && result.success) {
+        showSuccess('system-update', 'База данных', 'pacman');
+      } else {
+        showError('Ошибка обновления базы', result && result.error ? result.error : 'Не удалось обновить базу данных пакетов');
+      }
+    } catch (e) {
+      showError('Ошибка обновления базы', e.message || 'Не удалось обновить базу данных пакетов');
+    }
+    hideProgress();
+    reloadPage();
+  };
+  document.getElementById('update-system-btn').onclick = async () => {
+    if (!window.api || !window.api.systemUpdate) return;
+    showProgress('system-update', 'system');
+    try {
+      const result = await window.api.systemUpdate();
+      if (result && result.success) {
+        showSuccess('system-update', 'Система', 'pacman');
+      } else {
+        showError('Ошибка обновления системы', result && result.error ? result.error : 'Не удалось обновить систему');
+      }
+    } catch (e) {
+      showError('Ошибка обновления системы', e.message || 'Не удалось обновить систему');
+    }
+    hideProgress();
+    reloadPage();
+  };
+  // Получаем пакеты
+  let optionalPkgs = [];
+  if (window.api && window.api.getOptionalUpgradablePackages) {
+    try {
+      optionalPkgs = await window.api.getOptionalUpgradablePackages();
+    } catch {}
+  }
+  let mainPkgs = [];
+  if (window.api && window.api.getUpgradablePackages) {
+    try {
+      mainPkgs = await window.api.getUpgradablePackages();
+    } catch {}
+  }
+  // Рендерим дополнительную таблицу
+  const optionalBlock = document.getElementById('system-optional-update-list-block');
+  if (optionalBlock) {
+    if (optionalPkgs && optionalPkgs.length > 0) {
+      optionalBlock.innerHTML = `
+        <div style='color:#4fc3f7;text-align:left;margin:18px 0 8px 0;font-size:1.08rem;font-weight:600;'>Можно обновить дополнительно:</div>
+        <table class="system-update-table" style="width:100%;border-collapse:separate;border-spacing:0 8px;">
+          <tbody>
+            ${optionalPkgs.map(pkg => `
+              <tr style="background:#23272e;border-radius:10px;box-shadow:0 1px 4px #0002;">
+                <td style="padding:8px 0;min-width:140px;max-width:200px;">
+                  <span class="system-update-pkg-title" onclick="window.renderPackagePage && window.renderPackagePage('${pkg.name}','${pkg.repo}')" style="color:#2196f3;font-size:1.08rem;font-weight:600;cursor:pointer;">${pkg.name}</span>
+                </td>
+                <td style="padding:8px 0 8px 32px;text-align:left;color:#b0b0b0;font-size:0.98rem;">${pkg.version} → ${pkg.newVersion}</td>
+                <td style="padding:8px 0 8px 0;min-width:110px;text-align:right;">
+                  <button class="system-update-single-btn" onclick="updateSinglePackageHandler('${pkg.name}')" style="background:#1976d2;color:#fff;border:none;border-radius:8px;padding:7px 18px;font-size:0.98rem;font-weight:500;cursor:pointer;transition:background 0.2s;">Обновить</button>
+                </td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      `;
+    } else {
+      optionalBlock.innerHTML = '';
+    }
+  }
+  // Рендерим основную таблицу
+  const mainBlock = document.getElementById('system-update-list-block');
+  if (mainBlock) {
+    if (mainPkgs && mainPkgs.length > 0) {
+      mainBlock.innerHTML = `
+        <table class="system-update-table" style="width:100%;border-collapse:separate;border-spacing:0 8px;">
+          <tbody>
+            ${mainPkgs.map(pkg => `
+              <tr style="background:#23272e;border-radius:10px;box-shadow:0 1px 4px #0002;">
+                <td style="padding:8px 0;min-width:140px;max-width:200px;">
+                  <span class="system-update-pkg-title" onclick="window.renderPackagePage && window.renderPackagePage('${pkg.name}','${pkg.repo}')" style="color:#2196f3;font-size:1.08rem;font-weight:600;cursor:pointer;">${pkg.name}</span>
+                </td>
+                <td style="padding:8px 0 8px 32px;text-align:left;color:#b0b0b0;font-size:0.98rem;">${pkg.version} → ${pkg.newVersion}</td>
+                <td style="padding:8px 0 8px 0;min-width:110px;text-align:right;">
+                  <button class="system-update-single-btn" onclick="updateSinglePackageHandler('${pkg.name}')" style="background:#1976d2;color:#fff;border:none;border-radius:8px;padding:7px 18px;font-size:0.98rem;font-weight:500;cursor:pointer;transition:background 0.2s;">Обновить</button>
+                </td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      `;
+    } else {
+      mainBlock.innerHTML = '';
+    }
+  }
+  // Если нет ни одного пакета — крупное сообщение
+  const emptyBlock = document.getElementById('system-update-empty-block');
+  if (emptyBlock) {
+    if ((!mainPkgs || mainPkgs.length === 0) && (!optionalPkgs || optionalPkgs.length === 0)) {
+      emptyBlock.innerHTML = `<div style='color:#4fc3f7;text-align:center;font-size:1.35rem;font-weight:700;margin:40px 0;'>Нет доступных обновлений</div>`;
+    } else {
+      emptyBlock.innerHTML = '';
+    }
+  }
+};
+
+// Глобальный обработчик для обновления одного пакета
+window.updateSinglePackageHandler = async function(pkgName) {
+  if (!window.api || !window.api.updateSinglePackage) return;
+  showProgress('single-update', pkgName);
+  try {
+    const result = await window.api.updateSinglePackage(pkgName);
+    if (result.success) {
+      showSuccess('single-update', pkgName, 'pacman');
+      await window.renderSystemUpdatePage();
+    } else {
+      showError('Ошибка обновления', result.error || 'Не удалось обновить пакет');
+    }
+  } catch (e) {
+    showError('Ошибка обновления', e.message || 'Не удалось обновить пакет');
+  }
+  hideProgress();
+};
+
 document.addEventListener('DOMContentLoaded', () => {
-  // Добавляем элементы прогресс-бара и ошибок
   addProgressAndErrorElements();
-  
   if (isFirstRun()) {
     renderWelcomePage();
   } else {
     renderMainPage();
   }
-  // Проверяем установленные пакеты при запуске
   checkInstalledPackages();
 });
 
-// Экспортируем функции в window
-window.renderSettingsPage = renderSettingsPage;
-window.renderPackagePage = renderPackagePage;
-window.handlePackageAction = handlePackageAction;
-window.hideError = hideError;
-window.hideSuccess = hideSuccess;
-window.cancelPackageAction = cancelPackageAction;
-window.loadMoreInstalledPackages = loadMoreInstalledPackages;
-
-// Тестовая функция для проверки API
-window.testAPI = async function() {
-  console.log('Testing API...');
-  console.log('window.api:', window.api);
-  
-  if (window.api) {
-    try {
-      console.log('Testing getPacmanPackages...');
-      const pacman = await window.api.getPacmanPackages();
-      console.log('Pacman packages:', pacman);
-      
-      console.log('Testing getYayPackages...');
-      const aur = await window.api.getYayPackages();
-      console.log('AUR packages:', aur);
-    } catch (e) {
-      console.error('API test error:', e);
-    }
-  } else {
-    console.log('API not available');
-  }
-};
+console.log('[AAC] renderer loaded');
+console.log('[AAC] window.api:', window.api);
+console.log('[AAC] renderSystemUpdatePage called');
+console.log('[AAC] calling window.api.getUpgradablePackages');

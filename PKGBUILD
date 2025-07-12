@@ -2,7 +2,7 @@
 # Arch App Center - A modern graphical package manager for Arch Linux
 # Built with Electron, supports pacman and AUR packages
 pkgname=arch-app-center
-pkgver=1.0.0
+pkgver=1.1.1
 pkgrel=1
 pkgdesc="A modern graphical package manager for Arch Linux with pacman and AUR support"
 arch=('x86_64')
